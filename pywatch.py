@@ -156,6 +156,7 @@ def start_watch_loop(root, paths_to_watch):
                         )
                         sys.exit(0)
 
+            paths_to_watch = get_all_file_paths(root)
             time.sleep(.100)
     except KeyboardInterrupt:
         print('\u001b[0m\nDone')
