@@ -2,6 +2,8 @@ import os
 import sys
 import time
 from argparse import ArgumentParser
+from hashlib import sha256
+from random import randint
 from subprocess import Popen
 
 from pyverifier import verify_file_path
@@ -9,7 +11,7 @@ from pyverifier import verify_file_path
 parser = ArgumentParser(description='Monitors a python file for changes and auto-reloads it.')
 parser.add_argument('file', help='the file to watch')
 parser.add_argument('-c', '--clear', dest='clear', action='store_true', help='clears the terminal between each restart')
-parser.add_argument('-l', '--python2', dest='python2', action='store_true',
+parser.add_argument('-s', '--secondary', dest='python2', action='store_true',
                     help='runs files with the "python2" command')
 parser.add_argument('-a', '--args', dest='args', action='store_true', help='add custom arguments to run your file with')
 args = parser.parse_args()
@@ -24,11 +26,15 @@ def get_file_lines(file_path):
 
 
 def get_file_contents(file_path):
-    file = open(file_path, 'r')
-    lines = file.read()
-    file.close()
+    try:
+        file = open(file_path, 'r')
+        lines = file.read()
+        file.close()
 
-    return lines
+        return lines
+    except FileNotFoundError:
+        rand_string = str(randint(1, 10000) + randint(1, 10000)).encode()
+        return sha256(rand_string).hexdigest()
 
 
 def get_formatted_import_names(file_path):
@@ -80,7 +86,8 @@ def find_included_files(file_path):
             continue
 
     for path in file_paths:
-        file_paths += find_included_files(path)
+        if path != file_path:
+            file_paths += find_included_files(path)
 
     # Remove duplicates
     file_paths_set = set()
@@ -91,7 +98,12 @@ def find_included_files(file_path):
 
 
 def get_all_file_paths(full_path):
-    included_files = find_included_files(full_path)
+    try:
+        included_files = find_included_files(full_path)
+    except RecursionError:
+        print('Error: Files may not import each other.')
+        sys.exit(0)
+
     included_files.append(full_path)
     return included_files
 
@@ -156,7 +168,13 @@ def start_watch_loop(root, paths_to_watch):
                         )
                         sys.exit(0)
 
+            # Refresh paths_to_watch and add keys for new files
             paths_to_watch = get_all_file_paths(root)
+            for path in paths_to_watch:
+                if path not in file_data:
+                    rand_string = str(randint(1, 10000) + randint(1, 10000)).encode()
+                    file_data[path] = sha256(rand_string).hexdigest()
+
             time.sleep(.100)
     except KeyboardInterrupt:
         print('\u001b[0m\nDone')
@@ -166,7 +184,12 @@ def start_watch_loop(root, paths_to_watch):
 def main():
     file_arg = args.file
     full_path = os.path.join(os.getcwd(), file_arg)
-    verify_file_path(full_path)
+
+    try:
+        verify_file_path(full_path)
+    except Exception:
+        print('Error: File is not valid.')
+        sys.exit(0)
 
     all_paths = get_all_file_paths(full_path)
     start_watch_loop(full_path, all_paths)
